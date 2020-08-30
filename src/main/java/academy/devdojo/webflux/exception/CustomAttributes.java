@@ -1,12 +1,11 @@
 package academy.devdojo.webflux.exception;
 
+import java.util.Map;
 import org.springframework.boot.web.error.ErrorAttributeOptions;
 import org.springframework.boot.web.reactive.error.DefaultErrorAttributes;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.util.Map;
 
 @Component
 public class CustomAttributes extends DefaultErrorAttributes {
@@ -18,7 +17,7 @@ public class CustomAttributes extends DefaultErrorAttributes {
         if (throwable instanceof ResponseStatusException) {
             ResponseStatusException ex = (ResponseStatusException) throwable;
             errorAttributesMap.put("message", ex.getMessage());
-            errorAttributesMap.put("developerMessage", "Adicionado atributo no corpo da exception");
+            errorAttributesMap.put("developerMessage", "A ResponseStatusException Happened");
             return errorAttributesMap;
         }
 
