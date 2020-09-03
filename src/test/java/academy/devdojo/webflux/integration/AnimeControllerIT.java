@@ -5,8 +5,12 @@ import academy.devdojo.webflux.exception.CustomAttributes;
 import academy.devdojo.webflux.repository.AnimeRepository;
 import academy.devdojo.webflux.service.AnimeService;
 import academy.devdojo.webflux.util.AnimeCreator;
+
+import java.util.List;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+
+import academy.devdojo.webflux.util.WebTestClientUtil;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,7 +20,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentMatchers;
 import org.mockito.BDDMockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -30,24 +36,34 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 @ExtendWith(SpringExtension.class)
-@WebFluxTest
-@Import({AnimeService.class, CustomAttributes.class})
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureWebTestClient
 public class AnimeControllerIT {
+    @Autowired
+    private WebTestClientUtil webTestClientUtil;
 
     @MockBean
     private AnimeRepository animeRepositoryMock;
-    @Autowired
-    private WebTestClient testClient;
+
+    private WebTestClient testClientUser;
+    private WebTestClient testClientAdmin;
+    private WebTestClient testClientInvalid;
 
     private final Anime anime = AnimeCreator.createValidAnime();
 
     @BeforeAll
     public static void blockHoundSetup() {
-        BlockHound.install();
+        BlockHound.install(
+                builder -> builder.allowBlockingCallsInside("java.util.UUID", "randomUUID")
+        );
     }
 
     @BeforeEach
     public void setUp() {
+        testClientUser = webTestClientUtil.authenticateClient("david","devdojo");
+        testClientAdmin = webTestClientUtil.authenticateClient("william","devdojo");
+        testClientInvalid = webTestClientUtil.authenticateClient("x","x");
+
         BDDMockito.when(animeRepositoryMock.findAll())
                 .thenReturn(Flux.just(anime));
 
@@ -57,11 +73,15 @@ public class AnimeControllerIT {
         BDDMockito.when(animeRepositoryMock.save(AnimeCreator.createAnimeToBeSaved()))
                 .thenReturn(Mono.just(anime));
 
+        BDDMockito.when(animeRepositoryMock
+                .saveAll(List.of(AnimeCreator.createAnimeToBeSaved(), AnimeCreator.createAnimeToBeSaved())))
+                .thenReturn(Flux.just(anime, anime));
+
         BDDMockito.when(animeRepositoryMock.delete(ArgumentMatchers.any(Anime.class)))
                 .thenReturn(Mono.empty());
 
         BDDMockito.when(animeRepositoryMock.save(AnimeCreator.createValidAnime()))
-                .thenReturn(Mono.empty());;
+                .thenReturn(Mono.empty());
 
     }
 
@@ -84,7 +104,7 @@ public class AnimeControllerIT {
     @Test
     @DisplayName("listAll returns a flux of anime")
     public void listAll_ReturnFluxOfAnime_WhenSuccessful() {
-        testClient
+        testClientUser
                 .get()
                 .uri("/animes")
                 .exchange()
@@ -97,7 +117,7 @@ public class AnimeControllerIT {
     @Test
     @DisplayName("listAll returns a flux of anime")
     public void listAll_Flavor2_ReturnFluxOfAnime_WhenSuccessful() {
-        testClient
+        testClientUser
                 .get()
                 .uri("/animes")
                 .exchange()
@@ -110,9 +130,9 @@ public class AnimeControllerIT {
     @Test
     @DisplayName("findById returns a Mono with anime when it exists")
     public void findById_ReturnMonoAnime_WhenSuccessful() {
-        testClient
+        testClientUser
                 .get()
-                .uri("/animes/{id}",1)
+                .uri("/animes/{id}", 1)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(Anime.class)
@@ -125,9 +145,9 @@ public class AnimeControllerIT {
         BDDMockito.when(animeRepositoryMock.findById(ArgumentMatchers.anyInt()))
                 .thenReturn(Mono.empty());
 
-        testClient
+        testClientUser
                 .get()
-                .uri("/animes/{id}",1)
+                .uri("/animes/{id}", 1)
                 .exchange()
                 .expectStatus().isNotFound()
                 .expectBody()
@@ -140,7 +160,7 @@ public class AnimeControllerIT {
     public void save_CreatesAnime_WhenSuccessful() {
         Anime animeToBeSaved = AnimeCreator.createAnimeToBeSaved();
 
-        testClient
+        testClientUser
                 .post()
                 .uri("/animes")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -152,11 +172,48 @@ public class AnimeControllerIT {
     }
 
     @Test
+    @DisplayName("saveBatch creates a list of anime when successful")
+    public void saveBatch_CreatesListOfAnime_WhenSuccessful() {
+        Anime animeToBeSaved = AnimeCreator.createAnimeToBeSaved();
+
+        testClientUser
+                .post()
+                .uri("/animes/batch")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(BodyInserters.fromValue(List.of(animeToBeSaved, animeToBeSaved)))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBodyList(Anime.class)
+                .hasSize(2)
+                .contains(anime);
+    }
+
+    @Test
+    @DisplayName("saveBatch returns Mono error when one of the objects in the list contains empty or null name")
+    public void saveBatch_ReturnsMonoError_WhenContainsInvalidName() {
+        Anime animeToBeSaved = AnimeCreator.createAnimeToBeSaved();
+
+        BDDMockito.when(animeRepositoryMock
+                .saveAll(ArgumentMatchers.anyIterable()))
+                .thenReturn(Flux.just(anime, anime.withName("")));
+
+        testClientUser
+                .post()
+                .uri("/animes/batch")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(BodyInserters.fromValue(List.of(animeToBeSaved, animeToBeSaved)))
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(400);
+    }
+
+    @Test
     @DisplayName("save returns mono error with bad request when name is empty")
     public void save_ReturnsError_WhenNameIsEmpty() {
         Anime animeToBeSaved = AnimeCreator.createAnimeToBeSaved().withName("");
 
-        testClient
+        testClientUser
                 .post()
                 .uri("/animes")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -171,7 +228,7 @@ public class AnimeControllerIT {
     @Test
     @DisplayName("delete removes the anime when successful")
     public void delete_RemovesAnime_WhenSuccessful() {
-        testClient
+        testClientUser
                 .delete()
                 .uri("/animes/{id}", 1)
                 .exchange()
@@ -184,7 +241,7 @@ public class AnimeControllerIT {
         BDDMockito.when(animeRepositoryMock.findById(ArgumentMatchers.anyInt()))
                 .thenReturn(Mono.empty());
 
-        testClient
+        testClientUser
                 .delete()
                 .uri("/animes/{id}", 1)
                 .exchange()
@@ -197,7 +254,7 @@ public class AnimeControllerIT {
     @Test
     @DisplayName("update save updated anime and returns empty mono when successful")
     public void update_SaveUpdatedAnime_WhenSuccessful() {
-        testClient
+        testClientUser
                 .put()
                 .uri("/animes/{id}", 1)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -212,7 +269,7 @@ public class AnimeControllerIT {
         BDDMockito.when(animeRepositoryMock.findById(ArgumentMatchers.anyInt()))
                 .thenReturn(Mono.empty());
 
-        testClient.put()
+        testClientUser.put()
                 .uri("/animes/{id}", 1)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(BodyInserters.fromValue(anime))
