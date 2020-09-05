@@ -18,6 +18,7 @@
 		<java.version>11</java.version>
 		<blockhound.version>1.0.3.RELEASE</blockhound.version>
 		<r2dbc-postgresql.version>0.8.4.RELEASE</r2dbc-postgresql.version>
+		<springdoc-openapi-webflux-ui.version>1.4.1</springdoc-openapi-webflux-ui.version>
 	</properties>
 
 	<dependencies>
