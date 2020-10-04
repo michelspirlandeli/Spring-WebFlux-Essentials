@@ -1,9 +1,9 @@
 # Spring WebFlux Essentials - APIs Reativas e escaláveis com Spring WebFlux
 
+[![Build Status](https://travis-ci.org/michelspirlandeli/Spring-WebFlux-Essentials.svg?branch=master)](https://travis-ci.org/michelspirlandeli/Spring-WebFlux-Essentials)
+[![MIT Licensed](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 ## Installation and Usage
-
-
-
 
 #### Clone the repository
 
